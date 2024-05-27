@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Pannellum Video Demo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='pannellum.css') }}"/>
+    <script src="{{ url_for('static', filename='pannellum.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='video-js.css') }}"/>
+    <script src="{{ url_for('static', filename='video.js') }}"></script>
+    <script src="{{ url_for('static', filename='videojs-pannellum-plugin.js') }}"></script>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+</head>
+<body>
+
+<video id="panorama" class="video-js vjs-default-skin vjs-big-play-centered"
+  controls preload="none" style="width:100%;height:400px;" crossorigin="anonymous">
+    <source src="{{ url_for('uploaded_file', filename=filename) }}" type="video/mp4"/>
+    <p class="vjs-no-js">
+        To view this video please enable JavaScript, and consider upgrading to
+        a web browser that supports HTML5 video.
+    </p>
+</video>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var player = videojs('panorama', {
+        plugins: {
+            pannellum: {
+                clickAndDrag: true,
+                mouseZoom: true,
+                autoRotate: -3,
+                compass: true, // Enable compass if supported by the pannellum plugin
+                hotSpots: [
+                    {
+                        pitch: 14.1,
+                        yaw: 1.5,
+                        type: "info",
+                        text: "BMT Canary Wharf Station",
+                        URL: "http://www.panoramio.com/photo/48269210"
+                    }
+                ]
+            }
+        }
+    });
+
+    // Fullscreen Toggle Button
+    var Button = videojs.getComponent('Button');
+    var fullscreenToggle = videojs.extend(Button, {
+        constructor: function() {
+            Button.apply(this, arguments);
+            this.controlText("Fullscreen Toggle");
+        },
+        handleClick: function() {
+            if (!player.isFullscreen()) {
+                player.requestFullscreen();
+            } else {
+                player.exitFullscreen();
+            }
+        },
+        buildCSSClass: function() {
+            return 'vjs-fullscreen-control vjs-control vjs-button';
+        }
+    });
+
+    videojs.registerComponent('fullscreenToggle', fullscreenToggle);
+    player.getChild('controlBar').addChild('fullscreenToggle', {});
+});
+</script>
+
+</body>
+</html>
