@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Gallery</title>
+</head>
+<body>
+    <h1>Image Gallery</h1>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
+    </form>
+    <div>
+        {% for file in files %}
+        <div>
+            <img src="{{ url_for('uploaded_file', filename=file) }}" alt="{{ file }}" style="width: 100px;">
+            <a href="{{ url_for('view_image', filename=file) }}">View 360</a>
+            <a href="{{ url_for('delete_file', filename=file) }}">Delete</a>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

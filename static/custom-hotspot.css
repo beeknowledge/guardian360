@@ -1,0 +1,7 @@
+.custom-hotspot {
+    background-color: #ff5722; /* 背景色 */
+    color: white;             /* 文字色 */
+    padding: 5px 10px;        /* パディング */
+    border-radius: 5px;       /* ボーダーの角を丸くする */
+    font-size: 14px;          /* フォントサイズ */
+}
