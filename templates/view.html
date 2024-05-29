@@ -2,6 +2,7 @@
 <html lang="jp">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
     <meta http-equiv="Pragma" content="no-cache"/>
     <meta http-equiv="Expires" content="0"/>
@@ -10,22 +11,100 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"/>
     <link rel="stylesheet" href="{{ url_for('static', filename='custom-hotspot.css') }}"/>
     <script src="{{ url_for('static', filename='pannellum.js') }}"></script>
+    <style>
+        body {
+            background-color: #fffdd0; /* 薄い黄色 */
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 2em;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            width: 80%;
+            max-width: 800px;
+            margin-top: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        #panorama {
+            width: 100%;
+            height: 500px;
+            border-radius: 10px;
+            border: 1px solid #ccc;
+        }
+        .pnlm-about-msg {
+            display: none !important;
+        }
+        #commentForm {
+            display: none;
+            position: absolute;
+            right: calc(100% - 300px);
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: white;
+            padding: 1em;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        textarea, input[type="url"] {
+            width: 100%;
+            margin-bottom: 0.5em;
+            padding: 0.5em;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 0.5em 1em;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 0.5em;
+        }
+        button:hover {
+            background-color: #555;
+        }
+    </style>
 </head>
 <body>
-    <h1>Bee Space 360</h1>
-    <div id="panorama" style="width: 100%; height: 500px;"></div>
-    <div id="commentForm" style="display:none; position: absolute; right: calc(100% - 300px); top: 50%; transform: translateY(-50%);">
-        <textarea id="commentText" placeholder="Enter your comment here..."></textarea>
-        <button onclick="saveComment()">Save Comment</button>
-        <button onclick="cancelEdit()">Cancel</button>
+    <div class="container">
+        <h1>Bee Space 360</h1>
+        <div id="panorama"></div>
+        <div id="commentForm">
+            <textarea id="commentText" placeholder="Enter your comment here..."></textarea>
+            <textarea id="additionalText" placeholder="Enter additional information here..." maxlength="300"></textarea>
+            <input type="url" id="urlText" placeholder="Enter URL here...">
+            <button onclick="saveComment()">Save Comment</button>
+            <button onclick="cancelEdit()">Cancel</button>
+            <button id="checkButton" style="display:none;" onclick="checkUrl()">Check</button>
+        </div>
+        <button onclick="location.reload();">Reload Page</button>
+        <button onclick="window.location.href='/';">Back to Index</button>
     </div>
-    
-    <button onclick="location.reload();">Reload Page</button>
     <script>
     var viewer;
+    var longPressTimer;
+    var touchStartX, touchStartY;
 
     document.addEventListener("DOMContentLoaded", function() {
         initializeViewer();
+        setupTouchEvents(); // モバイル対応のためのタッチイベントのセットアップ
+    });
+
+    window.addEventListener("resize", function() {
+        if (viewer) {
+            viewer.resize();
+        }
     });
 
     function initializeViewer() {
@@ -37,6 +116,26 @@
         });
         setTimeout(loadHotspots, 250); // Initialize viewer then load hotspots
         setupContextMenu();
+    }
+
+    function createCustomTooltip(hotSpotDiv, args) {
+        const span = document.createElement('span');
+        span.classList.add('custom-hotspot-tooltip');
+        span.innerText = args.text;
+        hotSpotDiv.appendChild(span);
+
+        // URLが存在する場合、リンクとして表示
+        if (args.url) {
+            const link = document.createElement('span');
+            link.classList.add('custom-hotspot-url');
+            link.innerText = "Link";
+            hotSpotDiv.appendChild(link);
+        }
+
+        // ホットスポットにクリックイベントを追加
+        hotSpotDiv.addEventListener('click', function() {
+            hotspotClicked(args);
+        });
     }
 
     function loadHotspots() {
@@ -53,18 +152,23 @@
                 viewer.addHotSpot({
                     "pitch": hotspot.pitch,
                     "yaw": hotspot.yaw,
-                    "type": "info",
-                    "text": hotspot.description,
-                    "id": hotspot.id.toString(),
+                    "type": "custom",
                     "cssClass": "custom-hotspot",
-                    "clickHandlerFunc": hotspotClicked,
-                    "clickHandlerArgs": {hotspot: hotspot}
+                    "createTooltipFunc": createCustomTooltip,
+                    "createTooltipArgs": {
+                        "text": hotspot.description,
+                        "pitch": hotspot.pitch,
+                        "yaw": hotspot.yaw,
+                        "id": hotspot.id,
+                        "additional_text": hotspot.additional_text,
+                        "url": hotspot.url // 新しいフィールドを引数に追加
+                    }
                 });
             });
         })
         .catch(error => console.error('Error fetching hotspots:', error));
     }
-    
+
     function setupContextMenu() {
         document.getElementById('panorama').addEventListener('contextmenu', function(event) {
             event.preventDefault();
@@ -73,27 +177,73 @@
         });
     }
 
-    function hotspotClicked(hotspot, args) {
-        console.log("Hotspot clicked:", args);
-        if (args && args.hotspot) {
-            showCommentForm(args.hotspot.pitch, args.hotspot.yaw, args.hotspot);
-        } else {
-            console.error("No hotspot data provided");
-        }
+    function setupTouchEvents() {
+        var panorama = document.getElementById('panorama');
+        
+        panorama.addEventListener('touchstart', function(event) {
+            var touch = event.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            longPressTimer = setTimeout(function() {
+                handleTouchEvent(touchStartX, touchStartY);
+            }, 500); // 長押しを検出する時間（500ミリ秒）
+        });
+
+        panorama.addEventListener('touchend', function(event) {
+            clearTimeout(longPressTimer);
+        });
+
+        panorama.addEventListener('touchmove', function(event) {
+            clearTimeout(longPressTimer);
+        });
+
+        // ピンチイン・ピンチアウトイベントの追加
+        panorama.addEventListener('gesturestart', function(event) {
+            event.preventDefault();
+        });
+
+        panorama.addEventListener('gesturechange', function(event) {
+            event.preventDefault();
+        });
+
+        panorama.addEventListener('gestureend', function(event) {
+            event.preventDefault();
+        });
+    }
+
+    function handleTouchEvent(clientX, clientY) {
+        var coords = viewer.mouseEventToCoords({ clientX: clientX, clientY: clientY });
+        showCommentForm(coords[0], coords[1], null);
+    }
+
+    function hotspotClicked(args) {
+        showCommentForm(args.pitch, args.yaw, args);
     }
 
     function showCommentForm(pitch, yaw, hotspot) {
         var form = document.getElementById('commentForm');
         form.style.display = 'block';
-        document.getElementById('commentText').value = hotspot ? hotspot.description : '';
+        document.getElementById('commentText').value = hotspot ? hotspot.text : '';
+        document.getElementById('additionalText').value = hotspot ? hotspot.additional_text : '';
+        document.getElementById('urlText').value = hotspot ? hotspot.url : '';  // URLフィールドの値を設定
         form.dataset.pitch = pitch;
         form.dataset.yaw = yaw;
         form.dataset.hotspotId = hotspot ? hotspot.id : '';
+        
+        // URLが存在する場合、"Check"ボタンを表示
+        var checkButton = document.getElementById('checkButton');
+        if (hotspot && hotspot.url) {
+            checkButton.style.display = 'inline-block';
+        } else {
+            checkButton.style.display = 'none';
+        }
     }
 
     function saveComment() {
         var form = document.getElementById('commentForm');
         var text = document.getElementById('commentText').value;
+        var additionalText = document.getElementById('additionalText').value;
+        var url = document.getElementById('urlText').value;  // URLフィールドの値を取得
         var pitch = parseFloat(form.dataset.pitch);
         var yaw = parseFloat(form.dataset.yaw);
         var id = form.dataset.hotspotId;
@@ -102,7 +252,7 @@
         fetch(id ? `/update_hotspot/${id}` : '/save_hotspot', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({pitch, yaw, text, imageId})  // imageId を含む JSON を送信
+            body: JSON.stringify({pitch, yaw, text, additional_text: additionalText, url, imageId})  // URLフィールドを含む JSON を送信
         })
         .then(response => response.json())
         .then(data => {
@@ -110,19 +260,30 @@
                 loadHotspots();
                 form.style.display = 'none';
                 document.getElementById('commentText').value = '';
+                document.getElementById('additionalText').value = '';
+                document.getElementById('urlText').value = '';  // URLフィールドの値をクリア
+                document.getElementById('checkButton').style.display = 'none';  // "Check"ボタンを非表示
             } else {
                 console.error('Error:', data.message);
             }
         })
         .catch(error => console.error('Error:', error));
     }
-    
-    
 
     function cancelEdit() {
         var form = document.getElementById('commentForm');
         form.style.display = 'none';
         document.getElementById('commentText').value = '';
+        document.getElementById('additionalText').value = '';
+        document.getElementById('urlText').value = '';  // URLフィールドの値をクリア
+        document.getElementById('checkButton').style.display = 'none';  // "Check"ボタンを非表示
+    }
+
+    function checkUrl() {
+        var url = document.getElementById('urlText').value;
+        if (url) {
+            window.open(url, '_blank');
+        }
     }
     </script>
 </body>

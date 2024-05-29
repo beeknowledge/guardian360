@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="jp">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+    <meta http-equiv="Pragma" content="no-cache"/>
+    <meta http-equiv="Expires" content="0"/>
+    <title>View 360 Image</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='pannellum.css') }}"/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='custom-hotspot.css') }}"/>
+    <script src="{{ url_for('static', filename='pannellum.js') }}"></script>
+</head>
+<body>
+    <h1>Bee Space 360</h1>
+    <div id="panorama" style="width: 100%; height: 500px;"></div>
+    <div id="commentForm" style="display:none; position: absolute; right: calc(100% - 300px); top: 50%; transform: translateY(-50%);">
+        <textarea id="commentText" placeholder="Enter your comment here..."></textarea>
+        <button onclick="saveComment()">Save Comment</button>
+        <button onclick="cancelEdit()">Cancel</button>
+    </div>
+    
+    <button onclick="location.reload();">Reload Page</button>
+    <script>
+    var viewer;
+
+    document.addEventListener("DOMContentLoaded", function() {
+        initializeViewer();
+    });
+
+    function initializeViewer() {
+        var imageUrl = {{ url_for('uploaded_file', filename=filename) | tojson | safe }};
+        viewer = pannellum.viewer('panorama', {
+            "type": "equirectangular",
+            "panorama": imageUrl,
+            "autoLoad": true
+        });
+        setTimeout(loadHotspots, 250); // Initialize viewer then load hotspots
+        setupContextMenu();
+    }
+
+    function loadHotspots() {
+        const imageId = {{ filename | tojson | safe }};
+        fetch(`/hotspots?image_id=${imageId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            data.forEach(hotspot => {
+                viewer.addHotSpot({
+                    "pitch": hotspot.pitch,
+                    "yaw": hotspot.yaw,
+                    "type": "info",
+                    "text": hotspot.description,
+                    "id": hotspot.id.toString(),
+                    "cssClass": "custom-hotspot",
+                    "clickHandlerFunc": hotspotClicked,
+                    "clickHandlerArgs": {hotspot: hotspot}
+                });
+            });
+        })
+        .catch(error => console.error('Error fetching hotspots:', error));
+    }
+    
+    function setupContextMenu() {
+        document.getElementById('panorama').addEventListener('contextmenu', function(event) {
+            event.preventDefault();
+            var coords = viewer.mouseEventToCoords(event);
+            showCommentForm(coords[0], coords[1], null);
+        });
+    }
+
+    function hotspotClicked(hotspot, args) {
+        console.log("Hotspot clicked:", args);
+        if (args && args.hotspot) {
+            showCommentForm(args.hotspot.pitch, args.hotspot.yaw, args.hotspot);
+        } else {
+            console.error("No hotspot data provided");
+        }
+    }
+
+    function showCommentForm(pitch, yaw, hotspot) {
+        var form = document.getElementById('commentForm');
+        form.style.display = 'block';
+        document.getElementById('commentText').value = hotspot ? hotspot.description : '';
+        form.dataset.pitch = pitch;
+        form.dataset.yaw = yaw;
+        form.dataset.hotspotId = hotspot ? hotspot.id : '';
+    }
+
+function saveComment() {
+    var form = document.getElementById('commentForm');
+    var text = document.getElementById('commentText').value;
+    var pitch = parseFloat(form.dataset.pitch);
+    var yaw = parseFloat(form.dataset.yaw);
+    var id = form.dataset.hotspotId;
+    var imageId = {{ filename | tojson | safe }};  // Flaskテンプレートから値を取得していることを確認
+
+    fetch(id ? `/update_hotspot/${id}` : '/save_hotspot', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pitch, yaw, text, imageId})  // imageId を含む JSON を送信
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadHotspots();
+            form.style.display = 'none';
+            document.getElementById('commentText').value = '';
+        } else {
+            console.error('Error:', data.message);
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+    
+    
+
+    function cancelEdit() {
+        var form = document.getElementById('commentForm');
+        form.style.display = 'none';
+        document.getElementById('commentText').value = '';
+    }
+    </script>
+</body>
+</html>
