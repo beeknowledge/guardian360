@@ -23,7 +23,7 @@ SECRET_KEYWORD = 'Himitsudayo'
 ADMIN_ID = 'beesan'
 ADMIN_PASSWORD = '8355'
 
-# ディレクトリの存在確認と作成
+# Ensure directories exist
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 if not os.path.exists(app.config['THUMBNAIL_FOLDER']):
@@ -45,7 +45,7 @@ class Hotspot(db.Model):
     additional_text = db.Column(db.String(300), nullable=True)
     url = db.Column(db.String(500), nullable=True)
     thumbnail_path = db.Column(db.String(500), nullable=True)
-    shared = db.Column(db.Boolean, default=False)  # 共有フラグ
+    shared = db.Column(db.Boolean, default=False)  # Shared flag
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # User ID
 
     def to_dict(self):
@@ -59,7 +59,7 @@ class Hotspot(db.Model):
             'url': self.url,
             'thumbnail_path': self.thumbnail_path,
             'shared': self.shared,
-            'user_id': self.user_id  # 追加
+            'user_id': self.user_id  # Added
         }
 
 @app.before_first_request
@@ -133,7 +133,7 @@ def login():
             session['user_id'] = user.id
             session['username'] = user.username
             
-            # ユーザーごとのアップロードディレクトリを作成
+            # Create user-specific upload directory
             user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], user.username)
             if not os.path.exists(user_upload_folder):
                 os.makedirs(user_upload_folder)
@@ -248,7 +248,6 @@ def upload_file():
             else:
                 flash('Unsupported file type', 'error')
     return redirect(url_for('user_index'))
-
 
 def compress_image(filepath, filename, quality=50):
     with Image.open(filepath) as img:
