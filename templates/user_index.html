@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Gallery</title>
+    <style>
+        body {
+            background-color: #fffdd0; /* 薄い黄色 */
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 2em;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            width: 80%;
+            max-width: 800px;
+            margin-top: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            padding: 0.5em;
+            margin-bottom: 1em;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: calc(100% - 20px); /* Adjust width to fit padding */
+        }
+        input[type="submit"] {
+            padding: 0.5em 1em;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        input[type="submit"]:hover {
+            background-color: #555;
+        }
+        .gallery-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .thumbnail {
+            width: 100px;
+            margin-right: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        .gallery-item p {
+            margin: 0;
+            font-weight: bold;
+        }
+        .gallery-item a {
+            margin-right: 10px;
+            color: #333;
+            text-decoration: none;
+        }
+        .gallery-item a:hover {
+            text-decoration: underline;
+        }
+        .share-checkbox {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Image Gallery</h1>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" id="fileUpload" accept="image/*,video/mp4">
+            <input type="submit" value="Upload">
+        </form>
+        <button onclick="window.location.href='/public_gallery';">Go to Public Gallery</button>
+        <button onclick="window.location.href='/logout';">Logout</button>
+        <div id="thumbnailContainer">
+            {% for file in files %}
+            <div class="gallery-item">
+                <input type="checkbox" class="share-checkbox" data-filename="{{ file }}" {% if file in shared_files %}checked{% endif %}> Check Share
+                {% if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')) %}
+                    <img class="thumbnail" src="{{ thumbnails[file] }}" alt="{{ file }}">
+                {% elif file.lower().endswith('.mp4') %}
+                    <img class="thumbnail" src="{{ thumbnails[file] }}" alt="{{ file }}">
+                {% endif %}
+                <div>
+                    <p>{{ file }}</p>
+                    <a href="{{ url_for('view_image', filename=file) }}">View 360</a>
+                    <a href="{{ url_for('delete_file', filename=file) }}">Delete</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const checkboxes = document.querySelectorAll('.share-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    const filename = checkbox.dataset.filename;
+                    const shared = checkbox.checked;
+                    fetch('/update_share', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ filename, shared })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.success) {
+                            alert('Failed to update share status: ' + data.message);
+                        }
+                    })
+                    .catch(error => alert('Error: ' + error));
+                });
+            });
+        });
+    </script>
+</body>
+</html>
