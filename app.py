@@ -196,6 +196,7 @@ def admin_panel():
 
     return render_template('admin_panel.html', users=user_stats)
 
+
 @app.route('/admin_add_user', methods=['POST'])
 @admin_required
 def admin_add_user():
@@ -217,19 +218,12 @@ def admin_add_user():
 def admin_delete_user(user_id):
     user = User.query.get(user_id)
     if user:
-        user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], user.username)
-        if os.path.exists(user_upload_folder):
-            for filename in os.listdir(user_upload_folder):
-                file_path = os.path.join(user_upload_folder, filename)
-                os.remove(file_path)
-            os.rmdir(user_upload_folder)
         db.session.delete(user)
         db.session.commit()
-        flash('User and their files deleted successfully.', 'success')
+        flash('User deleted successfully.', 'success')
     else:
         flash('User not found.', 'danger')
     return redirect(url_for('admin_panel'))
-
 
 @app.route('/upload', methods=['POST'])
 @login_required
