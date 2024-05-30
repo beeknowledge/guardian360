@@ -1,8 +1,9 @@
-import logging
-from flask import Flask, request, render_template, send_from_directory, redirect, url_for, jsonify, flash, session
+from flask import Flask, request, render_template, redirect, url_for, flash, session, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError
 from functools import wraps
 from PIL import Image
 from datetime import datetime
@@ -17,13 +18,14 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = 'resamtoedo8'
 db = SQLAlchemy(app)
+csrf = CSRFProtect(app)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4'}
 SECRET_KEYWORD = 'Himitsudayo'
 ADMIN_ID = 'beesan'
 ADMIN_PASSWORD = '8355'
 
-# Ensure directories exist
+# ディレクトリの存在確認と作成
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 if not os.path.exists(app.config['THUMBNAIL_FOLDER']):
@@ -45,8 +47,8 @@ class Hotspot(db.Model):
     additional_text = db.Column(db.String(300), nullable=True)
     url = db.Column(db.String(500), nullable=True)
     thumbnail_path = db.Column(db.String(500), nullable=True)
-    shared = db.Column(db.Boolean, default=False)  # Shared flag
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # User ID
+    shared = db.Column(db.Boolean, default=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     def to_dict(self):
         return {
@@ -59,7 +61,7 @@ class Hotspot(db.Model):
             'url': self.url,
             'thumbnail_path': self.thumbnail_path,
             'shared': self.shared,
-            'user_id': self.user_id  # Added
+            'user_id': self.user_id
         }
 
 @app.before_first_request
@@ -133,7 +135,6 @@ def login():
             session['user_id'] = user.id
             session['username'] = user.username
             
-            # Create user-specific upload directory
             user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], user.username)
             if not os.path.exists(user_upload_folder):
                 os.makedirs(user_upload_folder)
@@ -174,7 +175,26 @@ def admin_logout():
 @admin_required
 def admin_panel():
     users = User.query.all()
-    return render_template('admin_panel.html', users=users)
+    user_stats = []
+
+    for user in users:
+        user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], user.username)
+        if os.path.exists(user_upload_folder):
+            total_files = len(os.listdir(user_upload_folder))
+            total_data = sum(os.path.getsize(os.path.join(user_upload_folder, f)) for f in os.listdir(user_upload_folder)) / (1024 * 1024)  # MB単位
+        else:
+            total_files = 0
+            total_data = 0
+        user_stats.append({
+            'id': user.id,
+            'username': user.username,
+            'access_count': user.access_count,
+            'last_login': user.last_login,
+            'total_files': total_files,
+            'total_data': round(total_data, 2)  # 小数点以下2桁に丸める
+        })
+
+    return render_template('admin_panel.html', users=user_stats)
 
 @app.route('/admin_add_user', methods=['POST'])
 @admin_required
@@ -197,12 +217,19 @@ def admin_add_user():
 def admin_delete_user(user_id):
     user = User.query.get(user_id)
     if user:
+        user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], user.username)
+        if os.path.exists(user_upload_folder):
+            for filename in os.listdir(user_upload_folder):
+                file_path = os.path.join(user_upload_folder, filename)
+                os.remove(file_path)
+            os.rmdir(user_upload_folder)
         db.session.delete(user)
         db.session.commit()
-        flash('User deleted successfully.', 'success')
+        flash('User and their files deleted successfully.', 'success')
     else:
         flash('User not found.', 'danger')
     return redirect(url_for('admin_panel'))
+
 
 @app.route('/upload', methods=['POST'])
 @login_required
@@ -223,12 +250,10 @@ def upload_file():
                     thumbnail_path = app.config['FAVICON_PATH']
                     flash(f'Video {filename} uploaded successfully!', 'success')
 
-                # Extract meaningful hotspot data from request form
                 provided_pitch = float(request.form.get('pitch', 0))
                 provided_yaw = float(request.form.get('yaw', 0))
                 provided_description = request.form.get('description', '')
 
-                # Only create a hotspot if there is meaningful data
                 if provided_pitch != 0 or provided_yaw != 0 or provided_description != '':
                     new_hotspot = Hotspot(
                         image_id=filename,
@@ -273,16 +298,19 @@ def get_hotspots():
     else:
         return jsonify({'error': 'Image ID is required'}), 400
 
-@app.route('/delete_file/<filename>', methods=['GET'])
+@app.route('/delete_file/<filename>', methods=['POST'])
 @login_required
 def delete_file(filename):
     user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
     file_path = os.path.join(user_upload_folder, filename)
     if os.path.exists(file_path):
         os.remove(file_path)
-        return redirect(url_for('user_index'))
+        Hotspot.query.filter_by(image_id=filename).delete()
+        db.session.commit()
+        flash('File deleted successfully.', 'success')
     else:
-        return "File not found", 404
+        flash('File not found.', 'danger')
+    return redirect(url_for('user_index'))
 
 @app.route('/update_hotspot/<int:id>', methods=['POST'])
 @login_required
@@ -290,11 +318,19 @@ def update_hotspot(id):
     data = request.get_json()
     hotspot = Hotspot.query.get(id)
     if hotspot:
-        hotspot.description = data.get('text')
+        description = data.get('text')
+        additional_text = data.get('additional_text')
+        url = data.get('url')
+        if not description and not additional_text and not url:
+            db.session.delete(hotspot)
+            db.session.commit()
+            return jsonify({"success": True, "message": "Hotspot deleted successfully."})
+        
+        hotspot.description = description
         hotspot.pitch = data.get('pitch')
         hotspot.yaw = data.get('yaw')
-        hotspot.additional_text = data.get('additional_text')
-        hotspot.url = data.get('url')
+        hotspot.additional_text = additional_text
+        hotspot.url = url
         db.session.commit()
         return jsonify({"success": True, "message": "Hotspot updated successfully"})
     else:
@@ -315,10 +351,18 @@ def save_hotspot():
         additional_text = data.get('additional_text')
         url = data.get('url')
 
-        if not image_id:
-            return jsonify({'success': False, 'message': 'Image ID is required.'}), 400
+        if not image_id or (not description and not additional_text and not url):
+            return jsonify({'success': False, 'message': 'Insufficient data provided.'}), 400
 
-        new_hotspot = Hotspot(image_id=image_id, pitch=pitch, yaw=yaw, description=description, additional_text=additional_text, url=url, user_id=session['user_id'])
+        new_hotspot = Hotspot(
+            image_id=image_id,
+            pitch=pitch,
+            yaw=yaw,
+            description=description,
+            additional_text=additional_text,
+            url=url,
+            user_id=session['user_id']
+        )
         db.session.add(new_hotspot)
         db.session.commit()
         return jsonify({'success': True, 'message': 'Hotspot saved successfully.'})
@@ -332,17 +376,37 @@ def uploaded_file(filename):
     user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
     return send_from_directory(user_upload_folder, filename)
 
-@app.route('/view/<filename>')
+@app.route('/view/<username>/<filename>')
 @login_required
-def view_image(filename):
+def view_image(username, filename):
     file_ext = os.path.splitext(filename)[1].lower()
-    user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
     if file_ext in ['.png', '.jpg', '.jpeg']:
-        return render_template('view.html', filename=filename)
+        return render_template('view.html', username=username, filename=filename)
     elif file_ext == '.mp4':
-        return render_template('viewmovie.html', filename=filename)
+        return render_template('viewmovie.html', username=username, filename=filename)
     else:
         return "Unsupported file type", 400
+
+
+
+@app.route('/view_shared_image/<path:filename>')
+@login_required
+def view_shared_image(filename):
+    user_upload_folder = app.config['UPLOAD_FOLDER']
+    file_ext = os.path.splitext(filename)[1].lower()
+    if file_ext in ['.png', '.jpg', '.jpeg']:
+        return render_template('view.html', filename=f"{user_upload_folder}/{filename}")
+    elif file_ext == '.mp4':
+        return render_template('viewmovie.html', filename=f"{user_upload_folder}/{filename}")
+    else:
+        return "Unsupported file type", 400
+    
+@app.route('/uploads/<username>/<filename>')
+@login_required
+def get_uploaded_file(username, filename):
+    user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], username)
+    return send_from_directory(user_upload_folder, filename)
+
 
 @app.route('/user_index')
 @login_required
@@ -372,7 +436,20 @@ def update_share():
             db.session.commit()
             return jsonify({'success': True})
         else:
-            return jsonify({'success': False, 'message': 'Hotspot not found'})
+            new_hotspot = Hotspot(
+                image_id=filename,
+                pitch=0,
+                yaw=0,
+                description='',
+                additional_text='',
+                url='',
+                thumbnail_path=file_path,
+                shared=shared,
+                user_id=session['user_id']
+            )
+            db.session.add(new_hotspot)
+            db.session.commit()
+            return jsonify({'success': True})
     except Exception as e:
         app.logger.error(f"Error updating share status: {e}")
         return jsonify({'success': False, 'message': str(e)})
@@ -381,10 +458,12 @@ def update_share():
 @login_required
 def public_gallery():
     shared_hotspots = Hotspot.query.filter_by(shared=True).all()
-    files = [hotspot.image_id for hotspot in shared_hotspots]
-    thumbnails = {file: app.config['FAVICON_PATH'] if file.lower().endswith('.mp4') else url_for('static', filename=f'thumbnails/{User.query.get(hotspot.user_id).username}/{file}') for file, hotspot in zip(files, shared_hotspots)}
-    user_ids = {file: User.query.get(hotspot.user_id).username for file, hotspot in zip(files, shared_hotspots)}
-    return render_template('public_gallery.html', files=files, thumbnails=thumbnails, user_ids=user_ids)
+    files = {hotspot.image_id: hotspot for hotspot in shared_hotspots}
+    user_ids = {hotspot.image_id: hotspot.user_id for hotspot in shared_hotspots}
+    thumbnails = {hotspot.image_id: hotspot.thumbnail_path for hotspot in shared_hotspots}
+    users = {hotspot.image_id: User.query.get(hotspot.user_id).username for hotspot in shared_hotspots}
+    return render_template('public_gallery.html', files=files, user_ids=user_ids, thumbnails=thumbnails, users=users)
+
 
 @app.route('/view_movie/<filename>')
 @login_required
@@ -393,6 +472,10 @@ def view_movie(filename):
         return render_template('viewmovie.html', filename=filename)
     else:
         return "Unsupported file type", 400
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    return render_template('csrf_error.html', reason=e.description), 400
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=3000, debug=True)

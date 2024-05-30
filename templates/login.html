@@ -56,12 +56,26 @@
         a:hover {
             text-decoration: underline;
         }
+        .error-message {
+            color: red;
+            margin-bottom: 1em;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Login</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="error-message">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
         <form action="{{ url_for('login') }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div>
                 <label for="username">Username:</label>
                 <input type="text" id="username" name="username" required>

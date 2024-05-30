@@ -108,7 +108,7 @@
     });
 
     function initializeViewer() {
-        var imageUrl = {{ url_for('uploaded_file', filename=filename) | tojson | safe }};
+        var imageUrl = '{{ url_for("get_uploaded_file", username=username, filename=filename) }}';
         viewer = pannellum.viewer('panorama', {
             "type": "equirectangular",
             "panorama": imageUrl,
@@ -139,7 +139,7 @@
     }
 
     function loadHotspots() {
-        const imageId = {{ filename | tojson | safe }};
+        const imageId = "{{ filename }}";
         fetch(`/hotspots?image_id=${imageId}`)
         .then(response => {
             if (!response.ok) {
@@ -149,21 +149,23 @@
         })
         .then(data => {
             data.forEach(hotspot => {
-                viewer.addHotSpot({
-                    "pitch": hotspot.pitch,
-                    "yaw": hotspot.yaw,
-                    "type": "custom",
-                    "cssClass": "custom-hotspot",
-                    "createTooltipFunc": createCustomTooltip,
-                    "createTooltipArgs": {
-                        "text": hotspot.description,
+                if (hotspot.description || hotspot.additional_text || hotspot.url) {
+                    viewer.addHotSpot({
                         "pitch": hotspot.pitch,
                         "yaw": hotspot.yaw,
-                        "id": hotspot.id,
-                        "additional_text": hotspot.additional_text,
-                        "url": hotspot.url // 新しいフィールドを引数に追加
-                    }
-                });
+                        "type": "custom",
+                        "cssClass": "custom-hotspot",
+                        "createTooltipFunc": createCustomTooltip,
+                        "createTooltipArgs": {
+                            "text": hotspot.description,
+                            "pitch": hotspot.pitch,
+                            "yaw": hotspot.yaw,
+                            "id": hotspot.id,
+                            "additional_text": hotspot.additional_text,
+                            "url": hotspot.url // 新しいフィールドを引数に追加
+                        }
+                    });
+                }
             });
         })
         .catch(error => console.error('Error fetching hotspots:', error));
@@ -247,14 +249,27 @@
         var pitch = parseFloat(form.dataset.pitch);
         var yaw = parseFloat(form.dataset.yaw);
         var id = form.dataset.hotspotId;
-        var imageId = {{ filename | tojson | safe }};  // Flaskテンプレートから値を取得していることを確認
+        var imageId = "{{ filename }}";  // Flaskテンプレートから値を取得していることを確認
+    
+        if (!text && !additionalText && !url) {
+            alert('Please enter at least one field.');
+            return;
+        }
     
         fetch(id ? `/update_hotspot/${id}` : '/save_hotspot', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() }}'  // CSRF トークンをヘッダーに追加
+            },
             body: JSON.stringify({pitch, yaw, text, additional_text: additionalText, url, imageId})  // URLフィールドを含む JSON を送信
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 loadHotspots();

@@ -77,6 +77,8 @@
                     <th>Username</th>
                     <th>Access Count</th>
                     <th>Last Login</th>
+                    <th>Total Files</th>
+                    <th>Total Data</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -87,8 +89,11 @@
                     <td>{{ user.username }}</td>
                     <td>{{ user.access_count }}</td>
                     <td>{{ user.last_login }}</td>
+                    <td>{{ user.total_files }}</td>
+                    <td>{{ user.total_data }} MB</td>
                     <td>
                         <form action="{{ url_for('admin_delete_user', user_id=user.id) }}" method="post" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit">Delete</button>
                         </form>
                     </td>
@@ -98,6 +103,7 @@
         </table>
         <h2>Add User</h2>
         <form action="{{ url_for('admin_add_user') }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="text" name="username" placeholder="Username" required>
             <input type="password" name="password" placeholder="Password" required>
             <button type="submit">Add User</button>
