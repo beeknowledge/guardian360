@@ -1,14 +1,14 @@
 .custom-hotspot {
-    background-color: #ff5722; /* 背景色 */
+    background-color: rgba(255, 87, 34, 0.7); /* 半透明の背景色 */
     color: white;             /* 文字色 */
     padding: 5px 10px;        /* パディング */
     border-radius: 5px;       /* ボーダーの角を丸くする */
-    font-size: 14px;          /* フォントサイズ */
+    font-size: 12px;          /* フォントサイズ */
 }
 
 /* ホバー時のスタイル */
 .custom-hotspot:hover {
-    background-color: #e64a19; /* ホバー時の背景色 */
+    background-color: rgba(230, 74, 25, 0.7); /* ホバー時の半透明の背景色 */
 }
 
 /* タブレット用のスタイル調整 */
@@ -23,7 +23,7 @@
 @media only screen and (max-width: 480px) {
     .custom-hotspot {
         padding: 8px 15px;    /* モバイル用のパディング */
-        font-size: 14px;      /* モバイル用のフォントサイズ */
+        font-size: 12px;      /* モバイル用のフォントサイズ */
     }
 }
 
@@ -35,11 +35,11 @@
 /* ホットスポットのツールチップスタイル */
 .custom-hotspot-tooltip {
     position: absolute;
-    background-color: #ff5722; /* 背景色 */
+    background-color: rgba(255, 87, 34, 0.7); /* 半透明の背景色 */
     color: white;             /* 文字色 */
     padding: 5px 10px;        /* パディング */
     border-radius: 5px;       /* ボーダーの角を丸くする */
-    font-size: 14px;          /* フォントサイズ */
+    font-size: 12px;          /* フォントサイズ */
     white-space: nowrap;      /* テキストの折り返しを防止 */
     pointer-events: none;     /* ポインタイベントを無効にして、ツールチップがクリックされないようにする */
 }
@@ -56,6 +56,6 @@
 @media only screen and (max-width: 480px) {
     .custom-hotspot-tooltip {
         padding: 8px 15px;    /* モバイル用のパディング */
-        font-size: 14px;      /* モバイル用のフォントサイズ */
+        font-size: 12px;      /* モバイル用のフォントサイズ */
     }
 }
