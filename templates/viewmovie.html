@@ -1,71 +1,324 @@
 <!DOCTYPE html>
-<html>
+<html lang="jp">
 <head>
-    <meta charset="utf-8">
-    <title>Pannellum Video Demo</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+    <meta http-equiv="Pragma" content="no-cache"/>
+    <meta http-equiv="Expires" content="0"/>
+    <title>View 360 Video</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='pannellum.css') }}"/>
-    <script src="{{ url_for('static', filename='pannellum.js') }}"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='video-js.css') }}"/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='custom-hotspot.css') }}"/>
+    <script src="{{ url_for('static', filename='pannellum.js') }}"></script>
     <script src="{{ url_for('static', filename='video.js') }}"></script>
     <script src="{{ url_for('static', filename='videojs-pannellum-plugin.js') }}"></script>
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <style>
+        body {
+            background-color: #fffdd0; /* 薄い黄色 */
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 2em;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            width: 80%;
+            max-width: 800px;
+            margin-top: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        #panorama {
+            width: 100%;
+            height: 500px;
+            border-radius: 10px;
+            border: 1px solid #ccc;
+        }
+        .pnlm-about-msg {
+            display: none !important;
+        }
+        #commentForm {
+            display: none;
+            position: absolute;
+            right: calc(100% - 300px);
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: white;
+            padding: 1em;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        textarea, input[type="url"] {
+            width: 100%;
+            margin-bottom: 0.5em;
+            padding: 0.5em;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 0.5em 1em;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 0.5em;
+        }
+        button:hover {
+            background-color: #555;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 1em;
+        }
+        .controls button, .controls input[type="range"] {
+            margin: 0 0.5em;
+        }
+    </style>
 </head>
 <body>
+    <div class="container">
+        <h1>Bee Space 360</h1>
+        <video id="panorama" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="none" style="width:100%;height:500px;" crossorigin="anonymous">
+            <source src="{{ url_for('uploaded_file', filename=filename) }}" type="video/mp4"/>
+            <p class="vjs-no-js">
+                To view this video please enable JavaScript, and consider upgrading to
+                a web browser that supports HTML5 video.
+            </p>
+        </video>
+        <div class="controls">
+            <button id="playButton">Play</button>
+            <button id="pauseButton">Pause</button>
+            <input type="range" id="seekBar" value="0" max="100">
+        </div>
+        <div id="commentForm">
+            <textarea id="commentText" placeholder="Enter your comment here..."></textarea>
+            <textarea id="additionalText" placeholder="Enter additional information here..." maxlength="300"></textarea>
+            <input type="url" id="urlText" placeholder="Enter URL here...">
+            <button onclick="saveComment()">Save Comment</button>
+            <button onclick="cancelEdit()">Cancel</button>
+            <button id="checkButton" style="display:none;" onclick="checkUrl()">Check</button>
+        </div>
+        <button onclick="location.reload();">Reload Page</button>
+        <button onclick="window.location.href='/user_index';">Back to Index</button>
+    </div>
+    <script>
+    var player;
+    var comments = [];
+    var longPressTimer;
+    var touchStartX, touchStartY;
 
-<video id="panorama" class="video-js vjs-default-skin vjs-big-play-centered"
-  controls preload="none" style="width:100%;height:400px;" crossorigin="anonymous">
-    <source src="{{ url_for('uploaded_file', filename=filename) }}" type="video/mp4"/>
-    <p class="vjs-no-js">
-        To view this video please enable JavaScript, and consider upgrading to
-        a web browser that supports HTML5 video.
-    </p>
-</video>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    var player = videojs('panorama', {
-        plugins: {
-            pannellum: {
-                clickAndDrag: true,
-                mouseZoom: true,
-                autoRotate: -3,
-                compass: true, // Enable compass if supported by the pannellum plugin
-                hotSpots: [
-                    {
-                        pitch: 14.1,
-                        yaw: 1.5,
-                        type: "info",
-                        text: "BMT Canary Wharf Station",
-                        URL: "http://www.panoramio.com/photo/48269210"
-                    }
-                ]
-            }
-        }
+    document.addEventListener("DOMContentLoaded", function() {
+        initializeViewer();
+        setupTouchEvents(); // モバイル対応のためのタッチイベントのセットアップ
     });
 
-    // Fullscreen Toggle Button
-    var Button = videojs.getComponent('Button');
-    var fullscreenToggle = videojs.extend(Button, {
-        constructor: function() {
-            Button.apply(this, arguments);
-            this.controlText("Fullscreen Toggle");
-        },
-        handleClick: function() {
-            if (!player.isFullscreen()) {
-                player.requestFullscreen();
+    function initializeViewer() {
+        player = videojs('panorama', {
+            plugins: {
+                pannellum: {}
+            }
+        });
+
+        document.getElementById('playButton').addEventListener('click', function() {
+            player.play();
+        });
+
+        document.getElementById('pauseButton').addEventListener('click', function() {
+            player.pause();
+        });
+
+        var seekBar = document.getElementById('seekBar');
+        seekBar.addEventListener('input', function() {
+            var time = player.duration() * (seekBar.value / 100);
+            player.currentTime(time);
+        });
+
+        player.on('timeupdate', function() {
+            var value = (100 / player.duration()) * player.currentTime();
+            seekBar.value = value;
+            updateHotspotVisibility(player.currentTime());
+        });
+
+        player.on('contextmenu', function(event) {
+            event.preventDefault();
+            if (player.paused()) { // ポーズ状態のときのみコメント入力フォームを表示
+                var currentTime = player.currentTime();
+                var coords = { pitch: Math.random() * 180 - 90, yaw: Math.random() * 360 - 180 }; // 仮の座標
+                showCommentForm(coords.pitch, coords.yaw, currentTime);
+            }
+        });
+
+        loadHotspots();
+    }
+
+    function loadHotspots() {
+        const videoId = "{{ filename }}";
+        fetch(`/hotspots?video_id=${videoId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            comments = data;
+            comments.forEach(comment => createHotspot(comment)); // 初期ロード時にホットスポットを作成
+        })
+        .catch(error => console.error('Error fetching hotspots:', error));
+    }
+
+    function showCommentForm(pitch, yaw, time) {
+        var form = document.getElementById('commentForm');
+        form.style.display = 'block';
+        form.dataset.pitch = pitch;
+        form.dataset.yaw = yaw;
+        form.dataset.time = time;
+    }
+
+    function saveComment() {
+        var form = document.getElementById('commentForm');
+        var text = document.getElementById('commentText').value;
+        var additionalText = document.getElementById('additionalText').value;
+        var url = document.getElementById('urlText').value;
+        var pitch = parseFloat(form.dataset.pitch);
+        var yaw = parseFloat(form.dataset.yaw);
+        var time = parseFloat(form.dataset.time);
+        var videoId = "{{ filename }}";
+
+        if (!text && !additionalText && !url) {
+            alert('Please enter at least one field.');
+            return;
+        }
+
+        fetch('/save_hotspot', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({ image_id: videoId, pitch, yaw, text, additional_text: additionalText, url, time })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                loadHotspots();
+                form.style.display = 'none';
+                document.getElementById('commentText').value = '';
+                document.getElementById('additionalText').value = '';
+                document.getElementById('urlText').value = '';
             } else {
-                player.exitFullscreen();
+                console.error('Error:', data.message);
             }
-        },
-        buildCSSClass: function() {
-            return 'vjs-fullscreen-control vjs-control vjs-button';
+        })
+        .catch(error => console.error('Error:', error));
+    }
+
+    function cancelEdit() {
+        var form = document.getElementById('commentForm');
+        form.style.display = 'none';
+        document.getElementById('commentText').value = '';
+        document.getElementById('additionalText').value = '';
+        document.getElementById('urlText').value = '';
+    }
+
+    function updateHotspotVisibility(currentTime) {
+        comments.forEach(function(hotspot) {
+            if (currentTime >= hotspot.time && currentTime < hotspot.time + 10) {
+                createHotspot(hotspot);
+            } else {
+                removeHotspot(hotspot);
+            }
+        });
+    }
+
+    function createHotspot(hotspot) {
+        if (hotspot.domElement) return; // 既に存在する場合は作成しない
+
+        var hotspotDiv = document.createElement('div');
+        hotspotDiv.className = 'custom-hotspot';
+        hotspotDiv.style.position = 'absolute';
+        hotspotDiv.style.top = '50%'; // 適切な位置に設定
+        hotspotDiv.style.left = '50%'; // 適切な位置に設定
+        hotspotDiv.innerHTML = '<strong>' + hotspot.text + '</strong>';
+        document.body.appendChild(hotspotDiv);
+
+        hotspotDiv.addEventListener('click', function() {
+            showCommentDetails(hotspot);
+        });
+
+        hotspot.domElement = hotspotDiv; // DOM要素を保存
+    }
+
+    function removeHotspot(hotspot) {
+        if (hotspot.domElement) {
+            document.body.removeChild(hotspot.domElement);
+            hotspot.domElement = null;
         }
-    });
+    }
 
-    videojs.registerComponent('fullscreenToggle', fullscreenToggle);
-    player.getChild('controlBar').addChild('fullscreenToggle', {});
-});
-</script>
+    function showCommentDetails(hotspot) {
+        alert(hotspot.text);
+    }
 
+    function setupTouchEvents() {
+        var panorama = document.getElementById('panorama');
+
+        panorama.addEventListener('touchstart', function(event) {
+            var touch = event.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            longPressTimer = setTimeout(function() {
+                handleTouchEvent(touchStartX, touchStartY);
+            }, 500); // 長押しを検出する時間（500ミリ秒）
+        });
+
+        panorama.addEventListener('touchend', function(event) {
+            clearTimeout(longPressTimer);
+        });
+
+        panorama.addEventListener('touchmove', function(event) {
+            clearTimeout(longPressTimer);
+        });
+
+        panorama.addEventListener('gesturestart', function(event) {
+            event.preventDefault();
+        });
+
+        panorama.addEventListener('gesturechange', function(event) {
+            event.preventDefault();
+        });
+
+        panorama.addEventListener('gestureend', function(event) {
+            event.preventDefault();
+        });
+    }
+
+    function handleTouchEvent(clientX, clientY) {
+        var currentTime = player.currentTime();
+        if (player.paused()) { // ポーズ状態のときのみコメント入力フォームを表示
+            var coords = { pitch: Math.random() * 180 - 90, yaw: Math.random() * 360 - 180 }; // 仮の座標
+            showCommentForm(coords.pitch, coords.yaw, currentTime);
+        }
+    }
+
+    </script>
 </body>
 </html>

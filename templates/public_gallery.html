@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Public Image Gallery</title>
+    <title>Public Gallery</title>
     <style>
         body {
             background-color: #fffdd0; /* 薄い黄色 */
@@ -23,6 +23,8 @@
             text-align: center;
             width: 80%;
             max-width: 800px;
+            max-height: 90vh; /* 最大高さを設定 */
+            overflow-y: auto; /* 縦方向にスクロールを許可 */
             margin-top: 20px;
         }
         h1 {
@@ -53,28 +55,36 @@
         .gallery-item a:hover {
             text-decoration: underline;
         }
+        .back-button {
+            margin-top: 20px;
+            padding: 0.5em 1em;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .back-button:hover {
+            background-color: #555;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Public Image Gallery</h1>
-        <button onclick="window.location.href='/user_index';">Back to My Gallery</button>
+        <h1>Public Gallery</h1>
         <div id="thumbnailContainer">
-            {% for file, hotspot in files.items() %}
-            <div class="gallery-item">
-                {% if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')) %}
-                    <img class="thumbnail" src="{{ url_for('get_uploaded_file', username=users[file], filename=file) }}" alt="{{ file }}">
-                {% elif file.lower().endswith('.mp4') %}
-                    <img class="thumbnail" src="{{ url_for('get_uploaded_file', username=users[file], filename=file) }}" alt="{{ file }}">
-                {% endif %}
-                <div>
-                    <p>{{ file }}</p>
-                    <p>Shared by: {{ users[file] }}</p>
-                    <a href="{{ url_for('view_image', username=users[file], filename=file) }}">View 360</a>
+            {% for file in files %}
+                <div class="gallery-item">
+                    <img class="thumbnail" src="{{ file.thumbnail }}" alt="{{ file.filename }}">
+                    <div>
+                        <p>{{ file.filename }}</p>
+                        <p>Uploaded by: {{ file.username }}</p>
+                        <a href="{{ url_for('view_image', username=file.username, filename=file.filename) }}">View 360</a>
+                    </div>
                 </div>
-            </div>
             {% endfor %}
         </div>
+        <button class="back-button" onclick="window.location.href='/user_index';">Back to Index</button>
     </div>
 </body>
 </html>

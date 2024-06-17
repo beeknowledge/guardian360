@@ -23,6 +23,8 @@
             text-align: center;
             width: 80%;
             max-width: 800px;
+            max-height: 90vh; /* 最大高さを設定 */
+            overflow-y: auto; /* 縦方向にスクロールを許可 */
             margin-top: 20px;
         }
         h1 {
@@ -74,8 +76,56 @@
         .gallery-item a:hover {
             text-decoration: underline;
         }
-        .share-checkbox {
+        .share-checkbox, .project-checkbox {
             margin-right: 10px;
+        }
+        .project {
+            margin-top: 20px;
+            text-align: left;
+        }
+        .project h3 {
+            margin-bottom: 5px;
+        }
+        .project ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        .project ul li {
+            margin-left: 20px;
+        }
+        .project-select {
+            margin: 20px 0;
+        }
+        .view-button {
+            padding: 0.5em 1em;
+            background-color: orange;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .view-button:hover {
+            background-color: #ff6600;
+        }
+        .fixed-buttons {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .fixed-buttons .button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        .fixed-buttons .button:hover {
+            background-color: #0056b3;
         }
     </style>
 </head>
@@ -84,57 +134,362 @@
         <h1>User Image Gallery</h1>
         <form action="/upload" method="post" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="file" name="file" id="fileUpload" accept="image/*,video/mp4">
+            <input type="file" name="file" id="fileUpload" accept="image/*,video/mp4" multiple>
             <input type="submit" value="Upload">
         </form>
         <button onclick="window.location.href='/public_gallery';">Go to Public Gallery</button>
         <button onclick="window.location.href='/logout';">Logout</button>
+        
+        <div class="project-select">
+            <label for="projectSelect">Select Project:</label>
+            <select id="projectSelect">
+                <option value="">--Select a Project--</option>
+                {% for project in projects %}
+                    <option value="{{ project.id }}" {% if project.id == selected_project_id %}selected{% endif %}>{{ project.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
         <div id="thumbnailContainer">
             {% for file in files %}
-            <div class="gallery-item">
-                <input type="checkbox" class="share-checkbox" data-filename="{{ file }}" {% if file in shared_files %}checked{% endif %}> Share
-                {% if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')) %}
-                    <img class="thumbnail" src="{{ url_for('get_uploaded_file', username=session['username'], filename=file) }}" alt="{{ file }}">
-                {% elif file.lower().endswith('.mp4') %}
-                    <img class="thumbnail" src="{{ url_for('get_uploaded_file', username=session['username'], filename=file) }}" alt="{{ file }}">
-                {% endif %}
-                <div>
-                    <p>{{ file }}</p>
-                    <a href="{{ url_for('view_image', username=session['username'], filename=file) }}">View 360</a>
-                    <form action="{{ url_for('delete_file', filename=file) }}" method="post" style="display:inline;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit">Delete</button>
-                    </form>
+                <div class="gallery-item">
+                    <label>
+                        <input type="checkbox" class="share-checkbox" data-filename="{{ file }}" {% if file in shared_files %}checked{% endif %}> Share
+                    </label>
+                    <input type="checkbox" class="project-checkbox" data-filename="{{ file }}"> Select for Project
+                    {% if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')) %}
+                        <img class="thumbnail" src="{{ thumbnails[file] }}" alt="{{ file }}">
+                    {% elif file.lower().endswith('.mp4') %}
+                        <img class="thumbnail" src="{{ thumbnails[file] }}" alt="{{ file }}">
+                    {% endif %}
+                    <div>
+                        <p>{{ file }}</p>
+                        <a class="view-button" href="{{ url_for('view_image', username=session['username'], filename=file) }}{% if selected_project_id %}?project_id={{ selected_project_id }}{% endif %}">View 360</a>
+                        <button onclick="deleteFile('{{ file }}', '{{ selected_project_id }}')">Delete</button>
+                    </div>
                 </div>
-            </div>
             {% endfor %}
         </div>
-    </div>
+        
+        <button id="createProjectButton">Create Project</button>
+
+        <div id="projectFilesContainer" style="display:none;">
+            <h2>Project Files</h2>
+            <div id="projectFiles"></div>
+            <input type="text" id="projectNameInput" placeholder="Enter new project name">
+            <button id="saveProjectNameButton">Save Project Name</button>
+            <button id="deleteProjectButton">Delete Project</button>
+        </div>
+        </div>
+        
+        <div class="fixed-buttons">
+            <button class="button" onclick="window.location.href='/download_report';">Project Report</button>
+            <button class="button" onclick="downloadProject()">Project Download</button>
+        </div>
+
     <script>
+        function fetchProjectFiles(projectId) {
+            if (projectId === "" || projectId === "None") {
+                document.getElementById('projectFilesContainer').style.display = 'none';
+                return;
+            }
+            fetch(`/get_project_files/${projectId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => { throw new Error(text) });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        const projectFilesContainer = document.getElementById('projectFilesContainer');
+                        const projectFiles = document.getElementById('projectFiles');
+                        projectFiles.innerHTML = '';
+        
+                        let projectNameInput = document.getElementById('projectNameInput');
+                        let saveProjectNameButton = document.getElementById('saveProjectNameButton');
+                        let deleteProjectButton = document.getElementById('deleteProjectButton');
+        
+                        if (!projectNameInput) {
+                            projectNameInput = document.createElement('input');
+                            projectNameInput.type = 'text';
+                            projectNameInput.id = 'projectNameInput';
+                            projectFilesContainer.appendChild(projectNameInput);
+                        }
+        
+                        projectNameInput.value = data.project.name;
+        
+                        if (!saveProjectNameButton) {
+                            saveProjectNameButton = document.createElement('button');
+                            saveProjectNameButton.innerText = 'Save Project Name';
+                            saveProjectNameButton.id = 'saveProjectNameButton';
+                            saveProjectNameButton.onclick = () => {
+                                const newName = projectNameInput.value;
+                                fetch(`/update_project_name/${projectId}`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': '{{ csrf_token() }}'
+                                    },
+                                    body: JSON.stringify({ name: newName })
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.success) {
+                                        alert('Project name updated successfully');
+                                        projectSelect.options[projectSelect.selectedIndex].text = newName; // ドロップダウンの選択肢も更新
+                                    } else {
+                                        alert('Failed to update project name: ' + data.message);
+                                    }
+                                })
+                                .catch(error => alert('Error: ' + error));
+                            };
+                            projectFilesContainer.appendChild(saveProjectNameButton);
+                        }
+        
+                        if (!deleteProjectButton) {
+                            deleteProjectButton = document.createElement('button');
+                            deleteProjectButton.innerText = 'Delete Project';
+                            deleteProjectButton.id = 'deleteProjectButton';
+                            deleteProjectButton.onclick = () => {
+                                fetch(`/delete_project/${projectId}`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRFToken': '{{ csrf_token() }}'
+                                    }
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.success) {
+                                        alert('Project deleted successfully');
+                                        window.location.reload(); // プロジェクト削除後にページをリロード
+                                    } else {
+                                        alert('Failed to delete project: ' + data.message);
+                                    }
+                                })
+                                .catch(error => alert('Error: ' + error));
+                            };
+                            projectFilesContainer.appendChild(deleteProjectButton);
+                        }
+        
+                        data.files.forEach(file => {
+                            const galleryItem = document.createElement('div');
+                            galleryItem.className = 'gallery-item';
+        
+                            const shareCheckbox = document.createElement('input');
+                            shareCheckbox.type = 'checkbox';
+                            shareCheckbox.className = 'share-checkbox';
+                            shareCheckbox.dataset.filename = file.filename;
+                            shareCheckbox.checked = file.shared;
+                            galleryItem.appendChild(shareCheckbox);
+        
+                            const projectCheckbox = document.createElement('input');
+                            projectCheckbox.type = 'checkbox';
+                            projectCheckbox.className = 'project-checkbox';
+                            projectCheckbox.dataset.filename = file.filename;
+                            galleryItem.appendChild(projectCheckbox);
+        
+                            const thumbnail = document.createElement('img');
+                            thumbnail.className = 'thumbnail';
+                            thumbnail.src = file.thumbnail;
+                            thumbnail.alt = file.filename;
+                            galleryItem.appendChild(thumbnail);
+        
+                            const detailsDiv = document.createElement('div');
+                            const filenameP = document.createElement('p');
+                            filenameP.innerText = file.filename;
+                            detailsDiv.appendChild(filenameP);
+        
+                            const viewLink = document.createElement('a');
+                            viewLink.href = `/view_image/${file.username}/${file.filename}?project_id=${projectId}`;
+                            viewLink.className = 'view-button';
+                            viewLink.innerText = 'View 360';
+                            detailsDiv.appendChild(viewLink);
+        
+                            const deleteButton = document.createElement('button');
+                            deleteButton.innerText = 'Delete';
+                            deleteButton.onclick = () => deleteFile(file.filename, projectId);
+                            detailsDiv.appendChild(deleteButton);
+        
+                            galleryItem.appendChild(detailsDiv);
+                            projectFiles.appendChild(galleryItem);
+        
+                            shareCheckbox.addEventListener('change', () => {
+                                const filename = shareCheckbox.dataset.filename;
+                                const shared = shareCheckbox.checked;
+                                fetch('/update_share', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': '{{ csrf_token() }}'
+                                    },
+                                    body: JSON.stringify({ filename, shared })
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (!data.success) {
+                                        alert('Failed to update share status: ' + data.message);
+                                    }
+                                })
+                                .catch(error => alert('Error: ' + error));
+                            });
+                        });
+        
+                        projectFilesContainer.style.display = 'block';
+                    } else {
+                        alert('Failed to load project files: ' + data.message);
+                    }
+                })
+                .catch(error => alert('Error: ' + error));
+        }
+        
+
+        function deleteFile(filename, projectId) {
+            fetch(`/delete_file/${filename}`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => { throw new Error(text) });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    if (projectId && projectId !== "None") {
+                        fetchProjectFiles(projectId); // Re-fetch the project files after deletion
+                    } else {
+                        location.reload(); // Refresh the page if no project is selected
+                    }
+                } else {
+                    alert('Failed to delete file: ' + data.message);
+                }
+            })
+            .catch(error => alert('Error: ' + error));
+        }
+        
+
+        function downloadProject() {
+            const projectSelect = document.getElementById('projectSelect');
+            const projectId = projectSelect.value;
+            if (projectId) {
+                window.location.href = `/download_project/${projectId}`;
+            } else {
+                alert('Please select a project first.');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
-            const checkboxes = document.querySelectorAll('.share-checkbox');
-            checkboxes.forEach(checkbox => {
-                checkbox.addEventListener('change', () => {
-                    const filename = checkbox.dataset.filename;
-                    const shared = checkbox.checked;
-                    fetch('/update_share', {
+            const projectSelect = document.getElementById('projectSelect');
+            const selectedProjectId = '{{ selected_project_id }}';
+        
+            if (selectedProjectId) {
+                projectSelect.value = selectedProjectId;
+                fetchProjectFiles(selectedProjectId);
+            }
+        
+            projectSelect.addEventListener('change', () => {
+                const projectId = projectSelect.value;
+                if (projectId) {
+                    fetchProjectFiles(projectId);
+                } else {
+                    document.getElementById('projectFilesContainer').style.display = 'none';
+                }
+            });
+        
+            const projectButton = document.getElementById('createProjectButton');
+            projectButton.addEventListener('click', () => {
+                const selectedFiles = [];
+                document.querySelectorAll('.project-checkbox:checked').forEach(checkbox => {
+                    selectedFiles.push(checkbox.dataset.filename);
+                });
+        
+                if (selectedFiles.length === 0) {
+                    alert('No files selected for the project');
+                    return;
+                }
+        
+                fetch('/create_project', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({ files: selectedFiles })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        alert('Failed to create project: ' + data.message);
+                    }
+                })
+                .catch(error => alert('Error: ' + error));
+            });
+        
+            // プロジェクト名の更新処理
+            const saveProjectNameButton = document.getElementById('saveProjectNameButton');
+            if (saveProjectNameButton) {
+                saveProjectNameButton.onclick = () => {
+                    const projectNameInput = document.getElementById('projectNameInput');
+                    const projectId = projectSelect.value;
+                    const newName = projectNameInput.value;
+        
+                    fetch(`/update_project_name/${projectId}`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRFToken': '{{ csrf_token() }}'
                         },
-                        body: JSON.stringify({ filename, shared })
+                        body: JSON.stringify({ name: newName })
                     })
                     .then(response => response.json())
                     .then(data => {
-                        if (!data.success) {
-                            alert('Failed to update share status: ' + data.message);
+                        if (data.success) {
+                            alert('Project name updated successfully');
+                            const selectedOption = projectSelect.querySelector(`option[value="${projectId}"]`);
+                            if (selectedOption) {
+                                selectedOption.text = newName; // ドロップダウンの選択肢も更新
+                            }
+                        } else {
+                            alert('Failed to update project name: ' + data.message);
                         }
                     })
                     .catch(error => alert('Error: ' + error));
-                });
-            });
+                };
+            }
+        
+            // プロジェクト削除処理
+            const deleteProjectButton = document.getElementById('deleteProjectButton');
+            if (deleteProjectButton) {
+                deleteProjectButton.onclick = () => {
+                    const projectId = projectSelect.value;
+        
+                    fetch(`/delete_project/${projectId}`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token() }}'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('Project deleted successfully');
+                            window.location.reload(); // プロジェクト削除後にページをリロード
+                        } else {
+                            alert('Failed to delete project: ' + data.message);
+                        }
+                    })
+                    .catch(error => alert('Error: ' + error));
+                };
+            }
         });
+        
+        
     </script>
 </body>
 </html>

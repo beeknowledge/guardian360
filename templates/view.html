@@ -31,6 +31,7 @@
             width: 80%;
             max-width: 800px;
             margin-top: 20px;
+            position: relative;
         }
         h1 {
             color: #333;
@@ -55,7 +56,7 @@
             border-radius: 10px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
-        textarea, input[type="url"] {
+        textarea, input[type="url"], input[type="file"] {
             width: 100%;
             margin-bottom: 0.5em;
             padding: 0.5em;
@@ -74,6 +75,50 @@
         button:hover {
             background-color: #555;
         }
+        .hotspot-list {
+            position: fixed; /* 変更: 絶対配置から固定配置に変更 */
+            right: 1em;
+            bottom: 1em;
+            background-color: #fffdd0;
+            padding: 1em;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+            width: 200px; /* フォントサイズに合わせて幅を調整 */
+            font-size: 0.8em; /* フォントサイズを小さく */
+        }
+        .hotspot-list h2 {
+            margin-top: 0;
+        }
+        .hotspot-item {
+            cursor: pointer;
+            padding: 0.5em 0;
+            border-bottom: 1px solid #ddd;
+        }
+        .hotspot-item:hover {
+            background-color: #f0f0f0;
+        }
+        .fixed-buttons {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            z-index: 1000; /* To ensure buttons are on top */
+        }
+        .fixed-buttons button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        .fixed-buttons button:hover {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 <body>
@@ -84,222 +129,39 @@
             <textarea id="commentText" placeholder="Enter your comment here..."></textarea>
             <textarea id="additionalText" placeholder="Enter additional information here..." maxlength="300"></textarea>
             <input type="url" id="urlText" placeholder="Enter URL here...">
+            <input type="file" id="imageUpload" accept="image/*">
+            <textarea id="uploadComment" placeholder="Enter image comment here..." maxlength="300"></textarea>
             <button onclick="saveComment()">Save Comment</button>
             <button onclick="cancelEdit()">Cancel</button>
             <button id="checkButton" style="display:none;" onclick="checkUrl()">Check</button>
         </div>
         <button onclick="location.reload();">Reload Page</button>
-        <button onclick="window.location.href='/user_index';">Back to Index</button>
+        {% if 'public_gallery' in request.referrer %}
+            <button onclick="window.location.href='/public_gallery';">Back to Public Gallery</button>
+        {% else %}
+            <button onclick="window.location.href='/user_index{% if request.args.get('project_id') %}?project_id={{ request.args.get('project_id') }}{% endif %}';">Back to Index</button>
+        {% endif %}
+    </div>
+    <div class="hotspot-list" id="hotspotList">
+        <h2>Hotspots (<span id="hotspotCount">0</span>)</h2>
+        <div id="hotspotItems"></div>
+    </div>
+    <div class="fixed-buttons">
+        <button onclick="showMessage('自動ホットスポットボタン')">自動ホットスポット</button>
+        <button onclick="showMessage('AIプライバシーフィルターボタン')">AIプライバシーフィルター</button>
     </div>
     <script>
-    var viewer;
-    var longPressTimer;
-    var touchStartX, touchStartY;
+        var csrfToken = '{{ csrf_token() }}';
+        var filename = '{{ filename }}';
+        var username = '{{ username }}';
+        var hotspotThumbnailBaseURL = '{{ url_for("static", filename="hotspotuploads/hotspot_thumbnails") }}';
+        var hotspotImageBaseURL = '{{ url_for("static", filename="hotspotuploads/hotspot_images") }}';
+        var imageUrl = '{{ url_for("uploaded_file", username=username, filename=filename) }}';
 
-    document.addEventListener("DOMContentLoaded", function() {
-        initializeViewer();
-        setupTouchEvents(); // モバイル対応のためのタッチイベントのセットアップ
-    });
-
-    window.addEventListener("resize", function() {
-        if (viewer) {
-            viewer.resize();
+        function showMessage(buttonName) {
+            alert(buttonName + "が押下されました。画像処理サーバーと現在接続されていません。");
         }
-    });
-
-    function initializeViewer() {
-        var imageUrl = '{{ url_for("get_uploaded_file", username=username, filename=filename) }}';
-        viewer = pannellum.viewer('panorama', {
-            "type": "equirectangular",
-            "panorama": imageUrl,
-            "autoLoad": true
-        });
-        setTimeout(loadHotspots, 250); // Initialize viewer then load hotspots
-        setupContextMenu();
-    }
-
-    function createCustomTooltip(hotSpotDiv, args) {
-        const span = document.createElement('span');
-        span.classList.add('custom-hotspot-tooltip');
-        span.innerText = args.text;
-        hotSpotDiv.appendChild(span);
-
-        // URLが存在する場合、リンクとして表示
-        if (args.url) {
-            const link = document.createElement('span');
-            link.classList.add('custom-hotspot-url');
-            link.innerText = "Link";
-            hotSpotDiv.appendChild(link);
-        }
-
-        // ホットスポットにクリックイベントを追加
-        hotSpotDiv.addEventListener('click', function() {
-            hotspotClicked(args);
-        });
-    }
-
-    function loadHotspots() {
-        const imageId = "{{ filename }}";
-        fetch(`/hotspots?image_id=${imageId}`)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            data.forEach(hotspot => {
-                if (hotspot.description || hotspot.additional_text || hotspot.url) {
-                    viewer.addHotSpot({
-                        "pitch": hotspot.pitch,
-                        "yaw": hotspot.yaw,
-                        "type": "custom",
-                        "cssClass": "custom-hotspot",
-                        "createTooltipFunc": createCustomTooltip,
-                        "createTooltipArgs": {
-                            "text": hotspot.description,
-                            "pitch": hotspot.pitch,
-                            "yaw": hotspot.yaw,
-                            "id": hotspot.id,
-                            "additional_text": hotspot.additional_text,
-                            "url": hotspot.url // 新しいフィールドを引数に追加
-                        }
-                    });
-                }
-            });
-        })
-        .catch(error => console.error('Error fetching hotspots:', error));
-    }
-
-    function setupContextMenu() {
-        document.getElementById('panorama').addEventListener('contextmenu', function(event) {
-            event.preventDefault();
-            var coords = viewer.mouseEventToCoords(event);
-            showCommentForm(coords[0], coords[1], null);
-        });
-    }
-
-    function setupTouchEvents() {
-        var panorama = document.getElementById('panorama');
-        
-        panorama.addEventListener('touchstart', function(event) {
-            var touch = event.touches[0];
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-            longPressTimer = setTimeout(function() {
-                handleTouchEvent(touchStartX, touchStartY);
-            }, 500); // 長押しを検出する時間（500ミリ秒）
-        });
-
-        panorama.addEventListener('touchend', function(event) {
-            clearTimeout(longPressTimer);
-        });
-
-        panorama.addEventListener('touchmove', function(event) {
-            clearTimeout(longPressTimer);
-        });
-
-        // ピンチイン・ピンチアウトイベントの追加
-        panorama.addEventListener('gesturestart', function(event) {
-            event.preventDefault();
-        });
-
-        panorama.addEventListener('gesturechange', function(event) {
-            event.preventDefault();
-        });
-
-        panorama.addEventListener('gestureend', function(event) {
-            event.preventDefault();
-        });
-    }
-
-    function handleTouchEvent(clientX, clientY) {
-        var coords = viewer.mouseEventToCoords({ clientX: clientX, clientY: clientY });
-        showCommentForm(coords[0], coords[1], null);
-    }
-
-    function hotspotClicked(args) {
-        showCommentForm(args.pitch, args.yaw, args);
-    }
-
-    function showCommentForm(pitch, yaw, hotspot) {
-        var form = document.getElementById('commentForm');
-        form.style.display = 'block';
-        document.getElementById('commentText').value = hotspot ? hotspot.text : '';
-        document.getElementById('additionalText').value = hotspot ? hotspot.additional_text : '';
-        document.getElementById('urlText').value = hotspot ? hotspot.url : '';  // URLフィールドの値を設定
-        form.dataset.pitch = pitch;
-        form.dataset.yaw = yaw;
-        form.dataset.hotspotId = hotspot ? hotspot.id : '';
-        
-        // URLが存在する場合、"Check"ボタンを表示
-        var checkButton = document.getElementById('checkButton');
-        if (hotspot && hotspot.url) {
-            checkButton.style.display = 'inline-block';
-        } else {
-            checkButton.style.display = 'none';
-        }
-    }
-
-    function saveComment() {
-        var form = document.getElementById('commentForm');
-        var text = document.getElementById('commentText').value;
-        var additionalText = document.getElementById('additionalText').value;
-        var url = document.getElementById('urlText').value;  // URLフィールドの値を取得
-        var pitch = parseFloat(form.dataset.pitch);
-        var yaw = parseFloat(form.dataset.yaw);
-        var id = form.dataset.hotspotId;
-        var imageId = "{{ filename }}";  // Flaskテンプレートから値を取得していることを確認
-    
-        if (!text && !additionalText && !url) {
-            alert('Please enter at least one field.');
-            return;
-        }
-    
-        fetch(id ? `/update_hotspot/${id}` : '/save_hotspot', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token() }}'  // CSRF トークンをヘッダーに追加
-            },
-            body: JSON.stringify({pitch, yaw, text, additional_text: additionalText, url, imageId})  // URLフィールドを含む JSON を送信
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                loadHotspots();
-                form.style.display = 'none';
-                document.getElementById('commentText').value = '';
-                document.getElementById('additionalText').value = '';
-                document.getElementById('urlText').value = '';  // URLフィールドの値をクリア
-                document.getElementById('checkButton').style.display = 'none';  // "Check"ボタンを非表示
-            } else {
-                console.error('Error:', data.message);
-            }
-        })
-        .catch(error => console.error('Error:', error));
-    }
-
-    function cancelEdit() {
-        var form = document.getElementById('commentForm');
-        form.style.display = 'none';
-        document.getElementById('commentText').value = '';
-        document.getElementById('additionalText').value = '';
-        document.getElementById('urlText').value = '';  // URLフィールドの値をクリア
-        document.getElementById('checkButton').style.display = 'none';  // "Check"ボタンを非表示
-    }
-
-    function checkUrl() {
-        var url = document.getElementById('urlText').value;
-        if (url) {
-            window.open(url, '_blank');
-        }
-    }
     </script>
+    <script src="{{ url_for('static', filename='view.js') }}"></script>
 </body>
 </html>
