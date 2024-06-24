@@ -76,7 +76,7 @@
         .gallery-item a:hover {
             text-decoration: underline;
         }
-        .share-checkbox, .project-checkbox {
+        .share-checkbox, .project-checkbox, .open-checkbox {
             margin-right: 10px;
         }
         .project {
@@ -157,6 +157,7 @@
                         <input type="checkbox" class="share-checkbox" data-filename="{{ file }}" {% if file in shared_files %}checked{% endif %}> Share
                     </label>
                     <input type="checkbox" class="project-checkbox" data-filename="{{ file }}"> Select for Project
+                    <input type="checkbox" class="open-checkbox" data-filename="{{file}}"> Select for Public
                     {% if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')) %}
                         <img class="thumbnail" src="{{ thumbnails[file] }}" alt="{{ file }}">
                     {% elif file.lower().endswith('.mp4') %}
@@ -288,6 +289,13 @@
                             projectCheckbox.className = 'project-checkbox';
                             projectCheckbox.dataset.filename = file.filename;
                             galleryItem.appendChild(projectCheckbox);
+
+                            const publicCheckbox = document.createElement('input');
+                            publicCheckbox.type = 'checkbox';
+                            publicCheckbox.className = 'open-checkbox';
+                            publicCheckbox.dataset.filename = file.filename;
+                            publicCheckbox.checked = file.public;
+                            galleryItem.appendChild(publicCheckbox);
         
                             const thumbnail = document.createElement('img');
                             thumbnail.className = 'thumbnail';
@@ -329,6 +337,26 @@
                                 .then(data => {
                                     if (!data.success) {
                                         alert('Failed to update share status: ' + data.message);
+                                    }
+                                })
+                                .catch(error => alert('Error: ' + error));
+                            });
+
+                            publicCheckbox.addEventListener('change', () => {
+                                const filename = publicCheckbox.dataset.filename;
+                                const public = publicCheckbox.checked;
+                                fetch('/update_open', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': '{{ csrf_token() }}'
+                                    },
+                                    body: JSON.stringify({ filename, public })
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (!data.success) {
+                                        alert('Failed to update open status: ' + data.message);
                                     }
                                 })
                                 .catch(error => alert('Error: ' + error));

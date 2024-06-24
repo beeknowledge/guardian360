@@ -79,6 +79,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             projectCheckbox.dataset.filename = file.filename;
                             galleryItem.appendChild(projectCheckbox);
 
+                            const openCheckbox = document.createElement('input');
+                            openCheckbox.type = 'checkbox';
+                            openCheckbox.className = 'open-checkbox';
+                            openCheckbox.dataset.filename = file.filename;
+                            openCheckbox.checked = file.public;
+                            galleryItem.appendChild(openCheckbox);
+
                             const thumbnail = document.createElement('img');
                             thumbnail.className = 'thumbnail';
                             thumbnail.src = file.thumbnail;
@@ -132,6 +139,27 @@ document.addEventListener('DOMContentLoaded', () => {
                                 .then(data => {
                                     if (!data.success) {
                                         alert('Failed to update share status: ' + data.message);
+                                    }
+                                })
+                                .catch(error => alert('Error: ' + error));
+                            });
+
+                            openCheckbox.addEventListener('change', () => {
+                                const filename = openCheckbox.dataset.filename;
+                                const public = openCheckbox.checked;
+
+                                fetch('/update_open', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': '{{ csrf_token() }}'
+                                    },
+                                    body: JSON.stringify({ filename, public })
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (!data.success) {
+                                        alert('Failed to update open status: ' + data.message);
                                     }
                                 })
                                 .catch(error => alert('Error: ' + error));
@@ -195,6 +223,29 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(data => {
                 if (!data.success) {
                     alert('Failed to update share status: ' + data.message);
+                }
+            })
+            .catch(error => alert('Error: ' + error));
+        });
+    });
+
+    const opencheckboxes = document.querySelectorAll('.open-checkbox');
+    opencheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', () => {
+            const filename = checkbox.dataset.filename;
+            const public = checkbox.checked;
+            fetch('/update_open', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({ filename, public })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Failed to update public status: ' + data.message);
                 }
             })
             .catch(error => alert('Error: ' + error));

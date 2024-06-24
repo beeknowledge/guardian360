@@ -138,6 +138,8 @@
         <button onclick="location.reload();">Reload Page</button>
         {% if 'public_gallery' in request.referrer %}
             <button onclick="window.location.href='/public_gallery';">Back to Public Gallery</button>
+        {% elif 'open_gallery' in request.referrer %}
+            <button onclick="window.location.href='/open_gallery';">Back to Open Gallery</button>
         {% else %}
             <button onclick="window.location.href='/user_index{% if request.args.get('project_id') %}?project_id={{ request.args.get('project_id') }}{% endif %}';">Back to Index</button>
         {% endif %}

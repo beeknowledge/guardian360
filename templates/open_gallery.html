@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Gallery</title>
+    <style>
+        body {
+            background-color: #fffdd0; /* 薄い黄色 */
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 2em;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            width: 80%;
+            max-width: 800px;
+            max-height: 90vh; /* 最大高さを設定 */
+            overflow-y: auto; /* 縦方向にスクロールを許可 */
+            margin-top: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .gallery-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .thumbnail {
+            width: 100px;
+            margin-right: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        .gallery-item p {
+            margin: 0;
+            font-weight: bold;
+        }
+        .gallery-item a {
+            margin-right: 10px;
+            color: #333;
+            text-decoration: none;
+        }
+        .gallery-item a:hover {
+            text-decoration: underline;
+        }
+        .back-button {
+            margin-top: 20px;
+            padding: 0.5em 1em;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .back-button:hover {
+            background-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Open Gallery</h1>
+        <div id="thumbnailContainer">
+            {% for file in files %}
+                <div class="gallery-item">
+                    <img class="thumbnail" src="{{ file.thumbnail }}" alt="{{ file.filename }}">
+                    <div>
+                        <p>{{ file.filename }}</p>
+                        <p>Uploaded by: {{ file.username }}</p>
+                        <a href="{{ url_for('view_image', auth='public_user:public_password',username=file.username, filename=file.filename) }}">View 360</a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        <button class="back-button" onclick="window.location.href='/login';">Back to Login</button>
+    </div>
+</body>
+</html>

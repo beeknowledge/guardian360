@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, redirect, url_for, flash, session, jsonify, send_from_directory, send_file
+from flask import Flask, request, render_template, redirect, url_for, flash, session, jsonify, send_from_directory, send_file, abort
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -24,6 +24,7 @@ app.config['FAVICON_PATH'] = 'static/favicon.ico'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.secret_key = 'resamtoedo8'
+app.config['SECRET_KEY'] = 'your_secret_key'
 db = SQLAlchemy(app)
 csrf = CSRFProtect(app)
 
@@ -31,6 +32,11 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4'}
 SECRET_KEYWORD = 'Himitsudayo'
 ADMIN_ID = 'beesan'
 ADMIN_PASSWORD = '8355'
+# Dummy user data for simplicity
+USER_DATA = {
+    "public_user": "public_password"
+}
+
 
 # ディレクトリの存在確認と作成
 for folder in [app.config['UPLOAD_FOLDER'], app.config['THUMBNAIL_FOLDER'], app.config['HOTSPOT_IMAGE_FOLDER']]:
@@ -55,6 +61,7 @@ class Hotspot(db.Model):
     url = db.Column(db.String(500), nullable=True)
     thumbnail_path = db.Column(db.String(500), nullable=True)
     shared = db.Column(db.Boolean, default=False)
+    public = db.Column(db.Boolean, default=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     upload_comment = db.Column(db.String(300), nullable=True)
     image_filename = db.Column(db.String(256), nullable=True)
@@ -70,6 +77,7 @@ class Hotspot(db.Model):
             'url': self.url,
             'thumbnail_path': self.thumbnail_path,
             'shared': self.shared,
+            'public': self.public,
             'user_id': self.user_id,
             'upload_comment': self.upload_comment,
             'image_filename': self.image_filename
@@ -285,6 +293,7 @@ def upload_file():
                     url=request.form.get('url', ''),
                     thumbnail_path=thumbnail_path,
                     shared=False,
+                    public=False,
                     user_id=session['user_id']
                 )
                 db.session.add(new_hotspot)
@@ -309,6 +318,24 @@ def generate_thumbnail(filepath, filename, size=(100, 100), return_url_for_view=
         return url_for('static', filename=f'hotspotuploads/hotspot_thumbnails/{filename}')
     else:
         return f'hotspotuploads/hotspot_thumbnails/{filename}'
+    
+def check_auth(username, password):
+    return USER_DATA.get(username) == password
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.args.get('auth')
+        if not auth:
+            return abort(401)
+        try:
+            username, password = auth.split(':')
+        except ValueError:
+            return abort(401)
+        if not check_auth(username, password):
+            return abort(403)
+        return f(*args, **kwargs)
+    return decorated
 
 @app.route('/hotspots', methods=['GET'])
 @login_required
@@ -475,6 +502,7 @@ def get_project_files(project_id):
             file_info = {
                 'filename': project_file.filename,
                 'shared': project_file.filename in [hotspot.image_id for hotspot in Hotspot.query.filter_by(shared=True).all()],
+                'public': project_file.filename in [hotspot.image_id for hotspot in Hotspot.query.filter_by(public=True).all()],
                 'thumbnail': url_for('static', filename=generate_thumbnail(os.path.join(app.config['UPLOAD_FOLDER'], session['username'], project_file.filename), project_file.filename, return_url_for_view=False)),
                 'username': session['username']
             }
@@ -491,6 +519,7 @@ def user_index():
     user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
     files = os.listdir(user_upload_folder)
     shared_files = [hotspot.image_id for hotspot in Hotspot.query.filter_by(shared=True).all()]
+    public_files = [hotspot.image_id for hotspot in Hotspot.query.filter_by(public=True).all()]
     thumbnails = {file: url_for('static', filename=generate_thumbnail(os.path.join(user_upload_folder, file), file, return_url_for_view=False)) if file.lower().endswith(('png', 'jpg', 'jpeg', 'gif')) else app.config['FAVICON_PATH'] for file in files if allowed_file(file)}
 
     projects = Project.query.filter_by(user_id=session['user_id']).all()
@@ -506,7 +535,7 @@ def user_index():
 
     selected_project_id = request.args.get('project_id')
 
-    return render_template('user_index.html', files=unprojected_files, thumbnails=thumbnails, shared_files=shared_files, projects=projects, project_files=project_files_dict, selected_project_id=selected_project_id)
+    return render_template('user_index.html', files=unprojected_files, thumbnails=thumbnails, shared_files=shared_files, public_files=public_files, projects=projects, project_files=project_files_dict, selected_project_id=selected_project_id)
 
 
 
@@ -573,6 +602,43 @@ def update_share():
         app.logger.error(f"Error updating share status: {e}")
         return jsonify({'success': False, 'message': str(e)})
     
+@app.route('/update_open', methods=['POST'])
+@login_required
+def update_open():
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        public = data.get('public')
+        user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session['username'])
+        file_path = os.path.join(user_upload_folder, filename)
+
+        if not os.path.exists(file_path):
+            return jsonify({'success': False, 'message': 'File not found'})
+
+        hotspot = Hotspot.query.filter_by(image_id=filename).first()
+        if hotspot:
+            hotspot.public = public
+            db.session.commit()
+            return jsonify({'success': True})
+        else:
+            new_hotspot = Hotspot(
+                image_id=filename,
+                pitch=0,
+                yaw=0,
+                description='',
+                additional_text='',
+                url='',
+                thumbnail_path=file_path,
+                public=public,
+                user_id=session['user_id']
+            )
+            db.session.add(new_hotspot)
+            db.session.commit()
+            return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error updating public status: {e}")
+        return jsonify({'success': False, 'message': str(e)})   
+    
 @app.route('/update_project_name/<int:project_id>', methods=['POST'])
 @login_required
 def update_project_name(project_id):
@@ -618,6 +684,19 @@ def public_gallery():
         }
         file_data.append(file_info)
     return render_template('public_gallery.html', files=file_data)
+
+@app.route('/open_gallery')
+def open_gallery():
+    open_files = Hotspot.query.filter_by(public=True).all()
+    file_data = []
+    for file in open_files:
+        file_info = {
+            'filename': file.image_id,
+            'thumbnail': url_for('static', filename=f'hotspotuploads/hotspot_thumbnails/{file.image_id}'),
+            'username': User.query.get(file.user_id).username
+        }
+        file_data.append(file_info)
+    return render_template('open_gallery.html', files=file_data)
 
 @app.route('/hotspot_info/<int:hotspot_id>')
 @login_required
@@ -707,8 +786,10 @@ def delete_project(project_id):
         return jsonify({'success': False, 'message': 'Internal Server Error'})
 
 
-
-
+@app.route('/view_public/<filename>')
+@requires_auth
+def view_public(filename):
+    return render_template('view.html', filename=filename)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=3000, debug=True)
