@@ -786,10 +786,35 @@ def delete_project(project_id):
         return jsonify({'success': False, 'message': 'Internal Server Error'})
 
 
-@app.route('/view_public/<filename>')
+@app.route('/view_public/<username>/<filename>')
 @requires_auth
-def view_public(filename):
-    return render_template('view.html', filename=filename)
+def view_public(username, filename):
+    session['user_id'] = 0
+    isPublic = isOpen_file(filename)
+    if isPublic == False:
+        return "File not found", 404
+    
+    file_ext = os.path.splitext(filename)[1].lower()
+    user_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], username)
+    file_path = os.path.join(user_upload_folder, filename)
+    if os.path.exists(file_path):
+        if file_ext in ['.png', '.jpg', '.jpeg']:
+            return render_template('view_public.html', username=username, filename=filename)
+        elif file_ext == '.mp4':
+            return render_template('viewmovie.html', username=username, filename=filename)
+        else:
+            return "Unsupported file type", 400
+    else:
+        return "File not found", 404
+    
+def isOpen_file(filename):
+    hotspot = Hotspot.query.filter_by(image_id=filename).first()
+    publicval = hotspot.public
+    print(publicval)
+    if publicval == 1:
+        return True
+    else:
+        return False
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=3000, debug=True)

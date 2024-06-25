@@ -79,7 +79,7 @@
                     <div>
                         <p>{{ file.filename }}</p>
                         <p>Uploaded by: {{ file.username }}</p>
-                        <a href="{{ url_for('view_image', auth='public_user:public_password',username=file.username, filename=file.filename) }}">View 360</a>
+                        <a href="{{ url_for('view_public', auth='public_user:public_password',username=file.username, filename=file.filename) }}">View 360</a>
                     </div>
                 </div>
             {% endfor %}
